@@ -3,3 +3,4 @@ checkcode/**
 checkcode.png
 *.log
 __pycache__/**
+Logs/*
