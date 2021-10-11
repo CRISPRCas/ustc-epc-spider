@@ -2,12 +2,18 @@ import json
 import smtplib
 from email.header import Header
 from email.mime.text import MIMEText
+from email.utils import formataddr, parseaddr
+
+
+def _format_addr(s):
+    name, addr = parseaddr(s)
+    return formataddr((Header(name, 'utf-8').encode(), addr))
 
 
 def SendEmail(sender, pswd, server, receiver, msg):
     # 三个参数：第一个为文本内容，第二个 plain 设置文本格式，第三个 utf-8 设置编码
     message = MIMEText(msg, 'plain', 'utf-8')
-    message['From'] = "EPC-BOT"  # 发送者
+    message['From'] = _format_addr('EPC-BOT <%s>' % sender)  # 发送者
     message['To'] = receiver    # 接收者
     message['Subject'] = Header("EPC选课通知", 'utf-8')
 
