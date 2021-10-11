@@ -1,19 +1,41 @@
+import json
 import smtplib
-from email.mime.text import MIMEText
 from email.header import Header
+from email.mime.text import MIMEText
 
-def SendMail(mail_content, sender, passwd) :
-	try:
-		message = MIMEText(mail_content, 'plain', 'utf-8')
-		message['From'] = Header("EPC选课通知", 'utf-8')   # 发送者
-		message['To'] =  Header("EPC选课通知", 'utf-8')		# 接收者
-		message['Subject'] = Header('EPC', 'utf-8')
-		
-		mail_host = "mail.ustc.edu.cn"
-		server = smtplib.SMTP(mail_host, 25)
-		server.login(sender, passwd)
 
-		server.sendmail(sender, [sender], message.as_string())
-		server.quit()
-	except smtplib.SMTPException:
-		print("Send Email Failed")
+def SendEmail(sender, pswd, server, receiver, msg):
+    # 三个参数：第一个为文本内容，第二个 plain 设置文本格式，第三个 utf-8 设置编码
+    message = MIMEText(msg, 'plain', 'utf-8')
+    message['From'] = "EPC-BOT"  # 发送者
+    message['To'] = receiver    # 接收者
+    message['Subject'] = Header("EPC选课通知", 'utf-8')
+
+    try:
+        smtp = smtplib.SMTP_SSL(server, 465)
+        smtp.login(sender, pswd)
+        smtp.sendmail(sender, receiver, message.as_string())
+        smtp.quit()
+    except:
+        smtp.connect(server, 25)
+        smtp.login(sender, pswd)
+        smtp.sendmail(sender, receiver, message.as_string())
+        smtp.quit()
+        return False
+    return True
+
+if __name__=='__main__':
+	json_str = ''
+	with open('config.json') as f:
+		json_str = f.read()
+	js = json.loads(json_str)
+
+	mailsender = js['sender.user']
+	mailpswd = js['sender.passwd']
+	mailserver = js['sender.mailserver']
+	mailreceiver = js['receiver.user']
+
+	if SendEmail(sender=mailsender, pswd=mailpswd, server=mailserver, receiver=mailreceiver, msg='TEST!'):
+		print('ok.')
+	else:
+		print('Not ok.')

@@ -10,6 +10,7 @@ class Logger:
         self.file = open(path,'a+', 1, 'UTF-8') # use line buffering
         self.prev_msg = None
         self.log_if_diff = log_if_diff
+        self.msgall = ''
     def log(self, msg: str, stdprint = True):
         if stdprint:
             print(str(datetime.datetime.now()), end=' ')
@@ -21,6 +22,7 @@ class Logger:
         self.file.write(s+'\n')
         
         self.prev_msg = msg
+        self.msgall += str(datetime.datetime.now()) + ' ' + msg + '\n'
 
 log_path = 'Logs'
 if not os.path.exists(log_path):

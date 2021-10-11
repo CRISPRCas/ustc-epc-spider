@@ -1,11 +1,12 @@
-import requests
-import re
-import io
 import json
-import yzm_wc
-import logger
-from os import system
+import re
 from datetime import datetime
+
+import requests
+
+import logger
+import yzm_wc
+from mail import SendEmail
 
 json_str = ''
 with open('config.json') as f:
@@ -13,6 +14,12 @@ with open('config.json') as f:
 js = json.loads(json_str)
 stuid = js['stuno']
 passwd = js['passwd']
+
+mailsender = js['sender.user']
+mailpswd = js['sender.passwd']
+mailserver = js['sender.mailserver']
+mailreceiver = js['receiver.user']
+
 order_flag = js['enable.order']
 replace_flag = js['enable.replace']
 duplicate_flag = js['enable.duplicate']
@@ -92,6 +99,7 @@ def login():
         return False
 
 if not login():
+    SendEmail(sender=mailsender, pswd=mailpswd, server=mailserver, receiver=mailreceiver, msg=logger.default_logger.msgall)
     exit(0)
 
 course_form_patt = re.compile(r'(<form action="(m_practice.asp\?second_id.*?)".*?</form>)', re.DOTALL)
@@ -219,6 +227,7 @@ def check_earliest_course(s:requests.Session, page_url:str, retry_num = 3):
         if('登录后可以查看详细信息' in page_raw):
             if(retry_num==0):
                 logger.default_logger.log('重新登录失败')
+                SendEmail(sender=mailsender, pswd=mailpswd, server=mailserver, receiver=mailreceiver, msg=logger.default_logger.msgall)
                 exit(-1)
             logger.default_logger.log('已被踢下线，正在重新登录')
             login()
@@ -251,7 +260,7 @@ def order(course_params: str):
     course_path = root_site + '/' + course_params
     res = s.post(course_path,book_form)
     succeed= not '操作失败' in res.text
-    with open('log.txt','w') as f:
+    with open('./Logs/log.txt','w') as f:
         f.write(res.text)
     operation_msg = None
     try:
@@ -353,11 +362,13 @@ while True:
         
         if not range_valid:
             logger.default_logger.log('最小周与最大周非法，请在config.json重新设置order_week_beforeequal与order_week_afterequal')
+            SendEmail(sender=mailsender, pswd=mailpswd, server=mailserver, receiver=mailreceiver, msg=logger.default_logger.msgall)
             exit(0)
         curr_candidate = None # None represents NOT replacing
         if not (in_range and (hours_enough or replace_flag)):
             if not hours_enough and not replace_flag:
                 logger.default_logger.log('学时不足，且已禁用换课。请到config.json内将enable.replace设为true，或空出足够学时。')
+                SendEmail(sender=mailsender, pswd=mailpswd, server=mailserver, receiver=mailreceiver, msg=logger.default_logger.msgall)
                 exit(0)
             continue
         # Now we know in_range, either hours_enough, or replace enabled
@@ -393,10 +404,12 @@ while True:
         if smart_order(res.params, curr_candidate):
             logger.default_logger.log('选课成功！')
             if not loop_flag:
+                SendEmail(sender=mailsender, pswd=mailpswd, server=mailserver, receiver=mailreceiver, msg=logger.default_logger.msgall)
                 exit(0)
         else:
             logger.default_logger.log('选课失败')
             if not loop_flag:
+                SendEmail(sender=mailsender, pswd=mailpswd, server=mailserver, receiver=mailreceiver, msg=logger.default_logger.msgall)
                 exit(0)
         # update candidate. replace_candidate shouldn't be set.
         available_hours, candidate_course, hours_enough = check_study_hours(s)
