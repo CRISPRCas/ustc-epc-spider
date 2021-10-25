@@ -27,5 +27,4 @@ class Logger:
 log_path = 'Logs'
 if not os.path.exists(log_path):
     os.mkdir(log_path)
-now = datetime.datetime.now()
-default_logger = Logger(log_path + '/' + str(now.year)+'-'+str(now.month)+'-'+str(now.day)+'.log', True)
+default_logger = Logger(log_path + '/log.log', True)

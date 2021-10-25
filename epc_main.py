@@ -8,33 +8,6 @@ import logger
 import yzm_wc
 from mail import SendEmail
 
-json_str = ''
-with open('config.json') as f:
-    json_str = f.read()
-js = json.loads(json_str)
-stuid = js['stuno']
-passwd = js['passwd']
-
-mailsender = js['sender.user']
-mailpswd = js['sender.passwd']
-mailserver = js['sender.mailserver']
-mailreceiver = js['receiver.user']
-
-order_flag = js['enable.order']
-replace_flag = js['enable.replace']
-duplicate_flag = js['enable.duplicate']
-loop_flag = js['enable.loop']
-order_week_beforeequal = js['order_week_beforeequal']
-order_week_afterequal = js['order_week_afterequal']
-replace_earlier = js['replace.earlier']
-replace_candidate = js['replace.candidate']
-replaec_forbidden = js['replace.forbidden']
-verbose_mode = js['verbose']
-course_forbidden = js['course.forbidden']
-course_favorite = js['course.favorite']
-
-enable_array = [js['enable.situational_dialog'], js['enable.topical_discuss'], js['enable.debate'], js['enable.drama']]
-
 root_site = 'http://epc.ustc.edu.cn'
 main_site = 'http://epc.ustc.edu.cn/main.asp'
 
@@ -48,6 +21,17 @@ nright_page = 'http://epc.ustc.edu.cn/n_right.asp'
 nbottom_page = 'http://epc.ustc.edu.cn/n_bottom.asp'
 record_page = 'http://epc.ustc.edu.cn/record_book.asp'
 
+course_form_patt = re.compile(r'(<form action="(m_practice.asp\?second_id.*?)".*?</form>)', re.DOTALL)
+form_tag_patt = re.compile('(<form action="(.*?)".*?</form>)', re.DOTALL)
+td_tag_patt = re.compile('<td.*?</td>',re.DOTALL)
+td_content_patt = re.compile('<td.*?>(.*?)</td>',re.DOTALL)
+datetime_patt = re.compile(r'(\d+)/(\d+)/(\d+)<br>(\d+):(\d+)-')
+name_in_td_patt = re.compile(r'<td.*?<a href.*?>(.*?)</a></td>')
+hours_enough = False
+old_state = [0,0,0,0]
+week_patt = re.compile(r'<td align="center">第(\d+)周</td>')
+order_msg_patt = re.compile(r'<tr><td colspan="2" style="padding-left:20px; padding-right:20px;color:#000000; font-weight:bold;">\s*(.*?)\s*</td', re.DOTALL)
+
 class Course:
     def __init__(self, params, start_time: datetime, name: str, score: int, week: int, order_open=False, selectable=False):
         self.params = params
@@ -58,17 +42,7 @@ class Course:
         self.order_open = order_open
         self.selectable = selectable
 
-# all, including planned and finished
-selected_courses = []
-# only planned
-planned_courses = []
-# TODO: maintain selected_courses in order, cancel
 
-# visit the site and get cookies
-default_headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/77.0.3865.75 Safari/537.36'
-                    }
-s = requests.Session()
-s.headers.update(default_headers)
 
 def login():
     s.get(main_site)
@@ -98,18 +72,6 @@ def login():
         logger.default_logger.log('Login failed.')
         return False
 
-if not login():
-    SendEmail(sender=mailsender, pswd=mailpswd, server=mailserver, receiver=mailreceiver, msg=logger.default_logger.msgall)
-    exit(0)
-
-course_form_patt = re.compile(r'(<form action="(m_practice.asp\?second_id.*?)".*?</form>)', re.DOTALL)
-form_tag_patt = re.compile('(<form action="(.*?)".*?</form>)', re.DOTALL)
-td_tag_patt = re.compile('<td.*?</td>',re.DOTALL)
-td_content_patt = re.compile('<td.*?>(.*?)</td>',re.DOTALL)
-datetime_patt = re.compile(r'(\d+)/(\d+)/(\d+)<br>(\d+):(\d+)-')
-name_in_td_patt = re.compile(r'<td.*?<a href.*?>(.*?)</a></td>')
-
-hours_enough = False
 
 # First, check study hours
 # Refresh selected_course
@@ -135,7 +97,7 @@ def check_study_hours(s):
         try:
             td_list = td_tag_patt.findall(form[0])
             # remove the zoom column
-            if 'zoom' in td_list[0]:
+            if 'zoom' or '腾讯会议' in td_list[0]:
                 td_list = td_list[1::]
             studied = '已刷卡上课' in td_list[9]
             planned = '预约中' in td_list[9]
@@ -184,6 +146,8 @@ def check_study_hours(s):
         if(candidate_name is None):
             print('No course candidate found, fall back to the first course')
             td_list = td_tag_patt.findall(form[0])
+            if 'zoom' or '腾讯会议' in td_list[0]:
+                td_list = td_list[1::]
             dt_match = datetime_patt.search(td_list[6])
             dt = datetime(int(dt_match.group(1)),int(dt_match.group(2)),int(dt_match.group(3)),int(dt_match.group(4)),int(dt_match.group(5)))
             candidate_dt, candidate_params, candidate_name = dt, form[1], name_in_td_patt.search(td_list[0]).group(1)
@@ -197,13 +161,9 @@ def check_study_hours(s):
             print('已禁用换课，无需被替代课程')
     return available_hours, candidate, hours_enough
 
-available_hours, candidate_course, hours_enough = check_study_hours(s)
 
-old_state = [0,0,0,0]
 
-week_patt = re.compile(r'<td align="center">第(\d+)周</td>')
 
-order_msg_patt = re.compile(r'<tr><td colspan="2" style="padding-left:20px; padding-right:20px;color:#000000; font-weight:bold;">\s*(.*?)\s*</td', re.DOTALL)
 
 def check_unfull_courses(s:requests.Session, page_url:str):
     pass
@@ -286,7 +246,7 @@ def cancel(cancel_params: str):
         available_hours += 2
     return succeed
 
-def smart_order(course_params: str, cdd = candidate_course):
+def smart_order(course_params: str, cdd = None):
     # TODO: check the field selectable, and report error if false
     # we shouldn't have reached here if it's false
     global available_hours
@@ -325,10 +285,6 @@ def smart_order(course_params: str, cdd = candidate_course):
     else:
         logger.default_logger.log('可用预约学时不足')
 
-logger.default_logger.log('开始捡漏')
-logger.default_logger.log('可用预约学时：'+ str(available_hours))
-
-print('Situ(1)\tTopi(2)\tDeba(2)\tDrama(2)')
 
 def time_conflict(c: Course, curr_ccd: Course):
     # compare with planned_courses
@@ -343,106 +299,158 @@ def time_conflict(c: Course, curr_ccd: Course):
                 # return False, p
     return False
 
-while True:
-    for i, page in enumerate([situational_dlg_page, topical_discus_page, debate_page, drama_page]):
-        if(not enable_array[i]):
-            if verbose_mode:
-                print('', end='\t')
-            continue
-        res = check_earliest_course(s, page+'&isall=some')
-        if res is None:
-            logger.default_logger.log('未查找到课程 稍后重试')
-            continue
-        if verbose_mode:
-            print(str(res.week), end='\t', flush=True)
-        if not res.order_open:
-            continue
-        range_valid = order_week_afterequal <= order_week_beforeequal and order_week_afterequal >= 0
-        in_range = res.week >= order_week_afterequal and res.week <= order_week_beforeequal and range_valid
-        
-        if not range_valid:
-            logger.default_logger.log('最小周与最大周非法，请在config.json重新设置order_week_beforeequal与order_week_afterequal')
-            SendEmail(sender=mailsender, pswd=mailpswd, server=mailserver, receiver=mailreceiver, msg=logger.default_logger.msgall)
-            exit(0)
-        curr_candidate = None # None represents NOT replacing
-        if not (in_range and (hours_enough or replace_flag)):
-            if not hours_enough and not replace_flag:
-                logger.default_logger.log('学时不足，且已禁用换课。请到config.json内将enable.replace设为true，或空出足够学时。')
-                SendEmail(sender=mailsender, pswd=mailpswd, server=mailserver, receiver=mailreceiver, msg=logger.default_logger.msgall)
-                exit(0)
-            continue
-        # Now we know in_range, either hours_enough, or replace enabled
-        if not hours_enough:
-            curr_candidate = candidate_course
-        # Check if we could shift the course to an earlier time
-        duplicate, newcandidate = course_duplicate(res, duplicate_flag)
-        if not duplicate and newcandidate and replace_flag:
-            logger.default_logger.log('已预约课程'+newcandidate.name+'存在更早的时间段，将作为被替代课程')
-            curr_candidate = newcandidate
-        if not hours_enough:
-            earlier2cdd = curr_candidate and res.start_time<curr_candidate.start_time
-            if replace_earlier and not earlier2cdd:
-                # not earlier than candidate
-                continue
-        forbidden = res.name in course_forbidden
-        favorite = len(course_favorite)==0 or res.name in course_favorite
-        if not favorite:
-            logger.default_logger.log('发现符合条件的可选课程:' +str(res.start_time)+' '+ res.name + '，但这门课不是想要的')
-            continue
-        contradict = time_conflict(res, curr_candidate)
-        
-        if duplicate:
-            logger.default_logger.log('发现符合条件的可选课程:' +str(res.start_time)+' '+ res.name + '，但这门课已经上过/选过了')
-            continue
-        if contradict:
-            logger.default_logger.log('发现符合条件的可选课程:' +str(res.start_time)+' '+ res.name + '，但这门课与已预约的课程时间冲突')
-            continue
-        if forbidden:
-            logger.default_logger.log('发现符合条件的可选课程:' +str(res.start_time)+' '+ res.name + '，但这门课被禁选')
-            continue
-        logger.default_logger.log('发现符合条件的可选课程：'+str(res.start_time)+' '+ res.name)
-        if smart_order(res.params, curr_candidate):
-            logger.default_logger.log('选课成功！')
-            if not loop_flag:
-                SendEmail(sender=mailsender, pswd=mailpswd, server=mailserver, receiver=mailreceiver, msg=logger.default_logger.msgall)
-                exit(0)
-        else:
-            logger.default_logger.log('选课失败')
-            if not loop_flag:
-                SendEmail(sender=mailsender, pswd=mailpswd, server=mailserver, receiver=mailreceiver, msg=logger.default_logger.msgall)
-                exit(0)
-        # update candidate. replace_candidate shouldn't be set.
-        available_hours, candidate_course, hours_enough = check_study_hours(s)
-    if verbose_mode:
-        print('')
-
 #--------------
 
-while True:
-    situatioinal_str = s.get(situational_dlg_page+'&isall=some').text
-    situational_week = int(week_patt.search(situatioinal_str).group(1))
-    print(str(situational_week), end='\t', flush=True)
-    if(situational_week<old_state[0]):
-        #send email
-        pass
-    topical_str = s.get(topical_discus_page+'&isall=some').text
-    topical_week = int(week_patt.search(topical_str).group(1))
-    print(str(topical_week), end='\t\t', flush=True)
-    if(topical_week<old_state[1]):
-        #send email
-        pass
-    debate_str = s.get(debate_page+'&isall=some').text
-    debate_week = int(week_patt.search(debate_str).group(1))
-    print(str(debate_week), end='\t', flush=True)
-    if(debate_week<old_state[2]):
-        #send email
-        pass
-    drama_week = int(week_patt.search(s.get(drama_page+'&isall=some').text).group(1))
-    print(str(drama_week), flush=True)
-    if(drama_week<old_state[3]):
-        #send email
-        pass
-    old_state = [situational_week, topical_week, debate_week, drama_week]
-pass
+# while True:
+#     situatioinal_str = s.get(situational_dlg_page+'&isall=some').text
+#     situational_week = int(week_patt.search(situatioinal_str).group(1))
+#     print(str(situational_week), end='\t', flush=True)
+#     if(situational_week<old_state[0]):
+#         #send email
+#         pass
+#     topical_str = s.get(topical_discus_page+'&isall=some').text
+#     topical_week = int(week_patt.search(topical_str).group(1))
+#     print(str(topical_week), end='\t\t', flush=True)
+#     if(topical_week<old_state[1]):
+#         #send email
+#         pass
+#     debate_str = s.get(debate_page+'&isall=some').text
+#     debate_week = int(week_patt.search(debate_str).group(1))
+#     print(str(debate_week), end='\t', flush=True)
+#     if(debate_week<old_state[2]):
+#         #send email
+#         pass
+#     drama_week = int(week_patt.search(s.get(drama_page+'&isall=some').text).group(1))
+#     print(str(drama_week), flush=True)
+#     if(drama_week<old_state[3]):
+#         #send email
+#         pass
+#     old_state = [situational_week, topical_week, debate_week, drama_week]
+# pass
 
 
+if __name__=='__main__':
+    # load config
+    json_str = ''
+    with open('config.json') as f:
+        json_str = f.read()
+    js = json.loads(json_str)
+    stuid = js['stuno']
+    passwd = js['passwd']
+    mailsender = js['sender.user']
+    mailpswd = js['sender.passwd']
+    mailserver = js['sender.mailserver']
+    mailreceiver = js['receiver.user']
+    order_flag = js['enable.order']
+    replace_flag = js['enable.replace']
+    duplicate_flag = js['enable.duplicate']
+    loop_flag = js['enable.loop']
+    order_week_beforeequal = js['order_week_beforeequal']
+    order_week_afterequal = js['order_week_afterequal']
+    replace_earlier = js['replace.earlier']
+    replace_candidate = js['replace.candidate']
+    replaec_forbidden = js['replace.forbidden']
+    verbose_mode = js['verbose']
+    course_forbidden = js['course.forbidden']
+    course_favorite = js['course.favorite']
+    maxloop = js['max.loop']
+    enable_array = [js['enable.situational_dialog'], js['enable.topical_discuss'], js['enable.debate'], js['enable.drama']]
+    
+    # get request
+    selected_courses = [] # all, including planned and finished
+    planned_courses = [] # only planned
+    # TODO: maintain selected_courses in order, cancel
+    # visit the site and get cookies
+    default_headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/77.0.3865.75 Safari/537.36'
+                        }
+    s = requests.Session()
+    s.headers.update(default_headers)
+
+    # login
+    if not login():
+        SendEmail(sender=mailsender, pswd=mailpswd, server=mailserver, receiver=mailreceiver, msg=logger.default_logger.msgall)
+        exit(0)
+
+    # check study hours
+    available_hours, candidate_course, hours_enough = check_study_hours(s)
+
+    logger.default_logger.log('开始捡漏')
+    logger.default_logger.log('可用预约学时：'+ str(available_hours))
+
+    print('Situ(1)\tTopi(2)\tDeba(2)\tDrama(2)')
+
+    for loop in range(maxloop):
+        logger.default_logger.log('第 {} 次检查'.format(loop))
+        for i, page in enumerate([situational_dlg_page, topical_discus_page, debate_page, drama_page]):
+            if(not enable_array[i]):
+                if verbose_mode:
+                    print('', end='\t')
+                continue
+            res = check_earliest_course(s, page+'&isall=some')
+            if res is None:
+                logger.default_logger.log('未查找到课程 稍后重试')
+                continue
+            if verbose_mode:
+                print(str(res.week), end='\t', flush=True)
+            if not res.order_open:
+                continue
+            range_valid = order_week_afterequal <= order_week_beforeequal and order_week_afterequal >= 0
+            in_range = res.week >= order_week_afterequal and res.week <= order_week_beforeequal and range_valid
+            
+            if not range_valid:
+                logger.default_logger.log('最小周与最大周非法，请在config.json重新设置order_week_beforeequal与order_week_afterequal')
+                SendEmail(sender=mailsender, pswd=mailpswd, server=mailserver, receiver=mailreceiver, msg=logger.default_logger.msgall)
+                exit(0)
+            curr_candidate = None # None represents NOT replacing
+            if not (in_range and (hours_enough or replace_flag)):
+                if not hours_enough and not replace_flag:
+                    logger.default_logger.log('学时不足，且已禁用换课。请到config.json内将enable.replace设为true，或空出足够学时。')
+                    SendEmail(sender=mailsender, pswd=mailpswd, server=mailserver, receiver=mailreceiver, msg=logger.default_logger.msgall)
+                    exit(0)
+                continue
+            # Now we know in_range, either hours_enough, or replace enabled
+            if not hours_enough:
+                curr_candidate = candidate_course
+            # Check if we could shift the course to an earlier time
+            duplicate, newcandidate = course_duplicate(res, duplicate_flag)
+            if not duplicate and newcandidate and replace_flag:
+                logger.default_logger.log('已预约课程'+newcandidate.name+'存在更早的时间段，将作为被替代课程')
+                curr_candidate = newcandidate
+            if not hours_enough:
+                earlier2cdd = curr_candidate and res.start_time<curr_candidate.start_time
+                if replace_earlier and not earlier2cdd:
+                    # not earlier than candidate
+                    continue
+            forbidden = res.name in course_forbidden
+            favorite = len(course_favorite)==0 or res.name in course_favorite
+            if not favorite:
+                logger.default_logger.log('发现符合条件的可选课程:' +str(res.start_time)+' '+ res.name + '，但这门课不是想要的')
+                continue
+            contradict = time_conflict(res, curr_candidate)
+            
+            if duplicate:
+                logger.default_logger.log('发现符合条件的可选课程:' +str(res.start_time)+' '+ res.name + '，但这门课已经上过/选过了')
+                continue
+            if contradict:
+                logger.default_logger.log('发现符合条件的可选课程:' +str(res.start_time)+' '+ res.name + '，但这门课与已预约的课程时间冲突')
+                continue
+            if forbidden:
+                logger.default_logger.log('发现符合条件的可选课程:' +str(res.start_time)+' '+ res.name + '，但这门课被禁选')
+                continue
+            logger.default_logger.log('发现符合条件的可选课程：'+str(res.start_time)+' '+ res.name)
+            if smart_order(res.params, curr_candidate):
+                logger.default_logger.log('选课成功！')
+                if not loop_flag:
+                    SendEmail(sender=mailsender, pswd=mailpswd, server=mailserver, receiver=mailreceiver, msg=logger.default_logger.msgall)
+                    exit(0)
+            else:
+                logger.default_logger.log('选课失败')
+                if not loop_flag:
+                    SendEmail(sender=mailsender, pswd=mailpswd, server=mailserver, receiver=mailreceiver, msg=logger.default_logger.msgall)
+                    exit(0)
+            # update candidate. replace_candidate shouldn't be set.
+            available_hours, candidate_course, hours_enough = check_study_hours(s)
+        if verbose_mode:
+            print('')
+    logger.default_logger.log('无可用操作，正常退出')
+    
