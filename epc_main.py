@@ -6,6 +6,7 @@ import requests
 
 import logger
 import yzm_wc
+from exception import *
 from mail import SendEmail
 
 root_site = 'http://epc.ustc.edu.cn'
@@ -44,7 +45,7 @@ class Course:
 
 
 
-def login():
+def login(s, stuid, passwd):
     s.get(main_site)
     # get check code's timestamp
     nleft_text = s.get(nleft_page).text
@@ -75,7 +76,7 @@ def login():
 
 # First, check study hours
 # Refresh selected_course
-def check_study_hours(s):
+def check_study_hours(s, selected_courses, planned_courses, replace_forbidden, replace_candidate, replace_flag):
     selected_courses.clear()
     s.cookies.set('querytype','all')
     res = s.get(record_page)
@@ -119,7 +120,7 @@ def check_study_hours(s):
             if studied:
                 studied_hours += c.score
             if need_candidate:
-                if(c.name != replaec_forbidden):
+                if(c.name != replace_forbidden):
                     candidate_courses.append(c)
                 if len(replace_candidate)>0:
                     if(planned and replace_candidate in nm):
@@ -168,7 +169,7 @@ def check_study_hours(s):
 def check_unfull_courses(s:requests.Session, page_url:str):
     pass
 
-def check_earliest_course(s:requests.Session, page_url:str, retry_num = 3):
+def check_earliest_course(s:requests.Session, page_url:str, stuid, passwd, retry_num = 3):
     week_patt = re.compile(r'<td align="center">第(\d+)周</td>')
     page_res = s.get(page_url+'&isall=some')
     page_raw = page_res.text
@@ -187,11 +188,12 @@ def check_earliest_course(s:requests.Session, page_url:str, retry_num = 3):
         if('登录后可以查看详细信息' in page_raw):
             if(retry_num==0):
                 logger.default_logger.log('重新登录失败')
-                SendEmail(sender=mailsender, pswd=mailpswd, server=mailserver, receiver=mailreceiver, msg=logger.default_logger.msgall)
-                exit(-1)
+                # SendEmail(sender=mailsender, pswd=mailpswd, server=mailserver, receiver=mailreceiver, msg=logger.default_logger.msgall)
+                # exit(-1)
+                raise reLoginError()
             logger.default_logger.log('已被踢下线，正在重新登录')
-            login()
-            return check_earliest_course(s, page_url, retry_num-1)
+            login(s=s, stuid=stuid, passwd=passwd)
+            return check_earliest_course(s, page_url, stuid, passwd, retry_num-1)
         else:
             if(page_res.status_code != 200):
                 logger.default_logger.log(str(page_res.status_code)+' 连接出现问题，网站可能暂时挂掉了...')
@@ -199,9 +201,8 @@ def check_earliest_course(s:requests.Session, page_url:str, retry_num = 3):
             return None
     else:
         return Course(course_params, dt, course_name, 2, earliest_week, order_open, selectable)
-        #return [earliest_week, dt, course_params, course_name]
 
-def course_duplicate(cc: Course, allowdup = False):
+def course_duplicate(cc: Course, replace_flag, planned_courses, selected_courses, allowdup = False):
     ls = None
     if allowdup:
         ls = planned_courses
@@ -214,7 +215,7 @@ def course_duplicate(cc: Course, allowdup = False):
             return True, c
     return False, None
 
-def order(course_params: str):
+def order(s, course_params: str):
     book_form = {'submit_type':'book_submit',
                 '截止日期':'end_date'}
     course_path = root_site + '/' + course_params
@@ -233,7 +234,7 @@ def order(course_params: str):
         available_hours -= 2
     return succeed, operation_msg
 
-def cancel(cancel_params: str):
+def cancel(s, cancel_params: str):
     cancel_form = {'submit_type':'book_cancel',
                 '截止日期':'end_date'}
     course_path = root_site + '/' + cancel_params
@@ -246,7 +247,7 @@ def cancel(cancel_params: str):
         available_hours += 2
     return succeed
 
-def smart_order(course_params: str, cdd = None):
+def smart_order(s, course_params: str, replace_flag, cdd = None):
     # TODO: check the field selectable, and report error if false
     # we shouldn't have reached here if it's false
     global available_hours
@@ -255,7 +256,7 @@ def smart_order(course_params: str, cdd = None):
         return
     if available_hours>=2 and cdd is None:
         logger.default_logger.log('可用预约学时足够，直接选课')
-        order_res = order(course_params)
+        order_res = order(s, course_params)
         if(order_res[0]):
             return True
         else:
@@ -264,11 +265,11 @@ def smart_order(course_params: str, cdd = None):
     elif(replace_flag):
         # we're NOT considering the score being ONE!
         logger.default_logger.log('正在换课， 将退课程：'+str(cdd.start_time)+' '+cdd.name)
-        if(not cancel(cdd.params)):
+        if(not cancel(s, cdd.params)):
             logger.default_logger.log('退课失败。仍尝试选课')
         # if(available_hours>=2):
         logger.default_logger.log('正在选课...')
-        order_res = order(course_params)
+        order_res = order(s, course_params)
         if(order_res[0]):
             return True
         else:
@@ -276,7 +277,7 @@ def smart_order(course_params: str, cdd = None):
             logger.default_logger.log('选课失败，原因：' + order_res[1])
             logger.default_logger.log('正在回滚...')
             candidate_params_order = cdd.params.replace('record_book.asp','m_practice.asp')
-            rb_res = order(candidate_params_order)
+            rb_res = order(s, candidate_params_order)
             if(not rb_res[0]):
                 logger.default_logger.log('回滚失败! 原因：'+rb_res[1])
             else:
@@ -286,7 +287,7 @@ def smart_order(course_params: str, cdd = None):
         logger.default_logger.log('可用预约学时不足')
 
 
-def time_conflict(c: Course, curr_ccd: Course):
+def time_conflict(c: Course, curr_ccd: Course, planned_courses, replace_flag):
     # compare with planned_courses
     for p in planned_courses:
         if p.start_time==c.start_time:
@@ -329,18 +330,9 @@ def time_conflict(c: Course, curr_ccd: Course):
 # pass
 
 
-if __name__=='__main__':
-    # load config
-    json_str = ''
-    with open('config.json') as f:
-        json_str = f.read()
-    js = json.loads(json_str)
+def main(usr, js):
     stuid = js['stuno']
     passwd = js['passwd']
-    mailsender = js['sender.user']
-    mailpswd = js['sender.passwd']
-    mailserver = js['sender.mailserver']
-    mailreceiver = js['receiver.user']
     order_flag = js['enable.order']
     replace_flag = js['enable.replace']
     duplicate_flag = js['enable.duplicate']
@@ -349,7 +341,7 @@ if __name__=='__main__':
     order_week_afterequal = js['order_week_afterequal']
     replace_earlier = js['replace.earlier']
     replace_candidate = js['replace.candidate']
-    replaec_forbidden = js['replace.forbidden']
+    replace_forbidden = js['replace.forbidden']
     verbose_mode = js['verbose']
     course_forbidden = js['course.forbidden']
     course_favorite = js['course.favorite']
@@ -367,12 +359,12 @@ if __name__=='__main__':
     s.headers.update(default_headers)
 
     # login
-    if not login():
-        SendEmail(sender=mailsender, pswd=mailpswd, server=mailserver, receiver=mailreceiver, msg=logger.default_logger.msgall)
-        exit(0)
+    if not login(s, stuid, passwd):
+        raise LoginError(usr)
 
     # check study hours
-    available_hours, candidate_course, hours_enough = check_study_hours(s)
+    global available_hours
+    available_hours, candidate_course, hours_enough = check_study_hours(s, selected_courses, planned_courses, replace_forbidden, replace_candidate, replace_flag)
 
     logger.default_logger.log('开始捡漏')
     logger.default_logger.log('可用预约学时：'+ str(available_hours))
@@ -380,13 +372,13 @@ if __name__=='__main__':
     print('Situ(1)\tTopi(2)\tDeba(2)\tDrama(2)')
 
     for loop in range(maxloop):
-        logger.default_logger.log('第 {} 次检查'.format(loop))
+        logger.default_logger.log('用户 {} 的第 {} 次检查'.format(usr, loop))
         for i, page in enumerate([situational_dlg_page, topical_discus_page, debate_page, drama_page]):
             if(not enable_array[i]):
                 if verbose_mode:
                     print('', end='\t')
                 continue
-            res = check_earliest_course(s, page+'&isall=some')
+            res = check_earliest_course(s, page+'&isall=some', stuid, passwd)
             if res is None:
                 logger.default_logger.log('未查找到课程 稍后重试')
                 continue
@@ -399,20 +391,18 @@ if __name__=='__main__':
             
             if not range_valid:
                 logger.default_logger.log('最小周与最大周非法，请在config.json重新设置order_week_beforeequal与order_week_afterequal')
-                SendEmail(sender=mailsender, pswd=mailpswd, server=mailserver, receiver=mailreceiver, msg=logger.default_logger.msgall)
-                exit(0)
+                raise configError("最小周与最大周非法")
             curr_candidate = None # None represents NOT replacing
             if not (in_range and (hours_enough or replace_flag)):
                 if not hours_enough and not replace_flag:
                     logger.default_logger.log('学时不足，且已禁用换课。请到config.json内将enable.replace设为true，或空出足够学时。')
-                    SendEmail(sender=mailsender, pswd=mailpswd, server=mailserver, receiver=mailreceiver, msg=logger.default_logger.msgall)
-                    exit(0)
+                    return -1
                 continue
             # Now we know in_range, either hours_enough, or replace enabled
             if not hours_enough:
                 curr_candidate = candidate_course
             # Check if we could shift the course to an earlier time
-            duplicate, newcandidate = course_duplicate(res, duplicate_flag)
+            duplicate, newcandidate = course_duplicate(res, duplicate_flag, planned_courses, selected_courses)
             if not duplicate and newcandidate and replace_flag:
                 logger.default_logger.log('已预约课程'+newcandidate.name+'存在更早的时间段，将作为被替代课程')
                 curr_candidate = newcandidate
@@ -426,7 +416,7 @@ if __name__=='__main__':
             if not favorite:
                 logger.default_logger.log('发现符合条件的可选课程:' +str(res.start_time)+' '+ res.name + '，但这门课不是想要的')
                 continue
-            contradict = time_conflict(res, curr_candidate)
+            contradict = time_conflict(res, curr_candidate, planned_courses, replace_flag)
             
             if duplicate:
                 logger.default_logger.log('发现符合条件的可选课程:' +str(res.start_time)+' '+ res.name + '，但这门课已经上过/选过了')
@@ -438,19 +428,42 @@ if __name__=='__main__':
                 logger.default_logger.log('发现符合条件的可选课程:' +str(res.start_time)+' '+ res.name + '，但这门课被禁选')
                 continue
             logger.default_logger.log('发现符合条件的可选课程：'+str(res.start_time)+' '+ res.name)
-            if smart_order(res.params, curr_candidate):
+            if smart_order(s, res.params, curr_candidate):
                 logger.default_logger.log('选课成功！')
                 if not loop_flag:
-                    SendEmail(sender=mailsender, pswd=mailpswd, server=mailserver, receiver=mailreceiver, msg=logger.default_logger.msgall)
-                    exit(0)
+                    return 1
             else:
                 logger.default_logger.log('选课失败')
                 if not loop_flag:
-                    SendEmail(sender=mailsender, pswd=mailpswd, server=mailserver, receiver=mailreceiver, msg=logger.default_logger.msgall)
-                    exit(0)
+                    raise bookError()
+                    
             # update candidate. replace_candidate shouldn't be set.
-            available_hours, candidate_course, hours_enough = check_study_hours(s)
+            available_hours, candidate_course, hours_enough = check_study_hours(s, selected_courses, planned_courses, replace_forbidden, replace_candidate, replace_flag)
         if verbose_mode:
             print('')
     logger.default_logger.log('无可用操作，正常退出')
-    
+    return 0
+
+if __name__=='__main__':
+    # load config
+    json_str = ''
+    with open('config.json') as f:
+        json_str = f.read()
+    jsconfig = json.loads(json_str)
+    mailsender = jsconfig['sender.user']
+    mailpswd = jsconfig['sender.passwd']
+    mailserver = jsconfig['sender.mailserver']
+    administrator = jsconfig["administrator.mailreceiver"]
+    users = jsconfig["users"]
+    for usr in users:
+        usrjs = jsconfig[usr]
+        mailreciever = usrjs["receiver.user"]
+        logger.default_logger.log('开始用户{}的检查'.format(usr))
+        try:
+            res = main(usr, usrjs)
+        except Exception as e:
+            SendEmail(sender=mailsender, pswd=mailpswd, server=mailserver, receiver=mailreciever, msg=str(e))
+            SendEmail(sender=mailsender, pswd=mailpswd, server=mailserver, receiver=administrator, msg=logger.default_logger.msgall)
+        else:
+            if res == 1:
+                SendEmail(sender=mailsender, pswd=mailpswd, server=mailserver, receiver=mailreciever, msg=logger.default_logger.msgall)
