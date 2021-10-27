@@ -23,6 +23,8 @@ class Logger:
         
         self.prev_msg = msg
         self.msgall += str(datetime.datetime.now()) + ' ' + msg + '\n'
+    def clear(self):
+        self.msgall = ''
 
 log_path = 'Logs'
 if not os.path.exists(log_path):

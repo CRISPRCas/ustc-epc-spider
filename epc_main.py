@@ -1,6 +1,7 @@
 import json
 import re
 from datetime import datetime
+from time import sleep
 
 import requests
 
@@ -276,12 +277,16 @@ def smart_order(s, course_params: str, replace_flag, cdd = None):
             # first roll back
             logger.default_logger.log('选课失败，原因：' + order_res[1])
             logger.default_logger.log('正在回滚...')
-            candidate_params_order = cdd.params.replace('record_book.asp','m_practice.asp')
-            rb_res = order(s, candidate_params_order)
-            if(not rb_res[0]):
-                logger.default_logger.log('回滚失败! 原因：'+rb_res[1])
-            else:
-                logger.default_logger.log('回滚成功.')
+            for i in range(3):
+                logger.default_logger.log('尝试回滚第 {} 次...'.format(i))
+                candidate_params_order = cdd.params.replace('record_book.asp','m_practice.asp')
+                rb_res = order(s, candidate_params_order)
+                if(not rb_res[0]):
+                    logger.default_logger.log('回滚失败! 原因：'+rb_res[1])
+                    sleep(30)
+                else:
+                    logger.default_logger.log('回滚成功.')
+                    break
             return False
     else:
         logger.default_logger.log('可用预约学时不足')
@@ -428,7 +433,7 @@ def main(usr, js):
                 logger.default_logger.log('发现符合条件的可选课程:' +str(res.start_time)+' '+ res.name + '，但这门课被禁选')
                 continue
             logger.default_logger.log('发现符合条件的可选课程：'+str(res.start_time)+' '+ res.name)
-            if smart_order(s, res.params, curr_candidate):
+            if smart_order(s, res.params, replace_flag, curr_candidate):
                 logger.default_logger.log('选课成功！')
                 if not loop_flag:
                     return 1
@@ -462,8 +467,13 @@ if __name__=='__main__':
         try:
             res = main(usr, usrjs)
         except Exception as e:
-            SendEmail(sender=mailsender, pswd=mailpswd, server=mailserver, receiver=mailreciever, msg=str(e))
+            # SendEmail(sender=mailsender, pswd=mailpswd, server=mailserver, receiver=mailreciever, msg=str(e))
+            logger.default_logger.log(str(e))
             SendEmail(sender=mailsender, pswd=mailpswd, server=mailserver, receiver=administrator, msg=logger.default_logger.msgall)
+            logger.default_logger.clear()
         else:
             if res == 1:
                 SendEmail(sender=mailsender, pswd=mailpswd, server=mailserver, receiver=mailreciever, msg=logger.default_logger.msgall)
+                logger.default_logger.clear()
+        finally:
+            logger.default_logger.log('Done.')
