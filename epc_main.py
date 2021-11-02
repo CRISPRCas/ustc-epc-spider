@@ -1,6 +1,7 @@
 import json
 import re
 from datetime import datetime
+from random import shuffle
 from time import sleep
 
 import requests
@@ -460,6 +461,7 @@ if __name__=='__main__':
     mailserver = jsconfig['sender.mailserver']
     administrator = jsconfig["administrator.mailreceiver"]
     users = jsconfig["users"]
+    shuffle(users)
     for usr in users:
         usrjs = jsconfig[usr]
         mailreciever = usrjs["receiver.user"]
@@ -467,13 +469,12 @@ if __name__=='__main__':
         try:
             res = main(usr, usrjs)
         except Exception as e:
-            # SendEmail(sender=mailsender, pswd=mailpswd, server=mailserver, receiver=mailreciever, msg=str(e))
             logger.default_logger.log(str(e))
             SendEmail(sender=mailsender, pswd=mailpswd, server=mailserver, receiver=administrator, msg=logger.default_logger.msgall)
-            logger.default_logger.clear()
         else:
             if res == 1:
                 SendEmail(sender=mailsender, pswd=mailpswd, server=mailserver, receiver=mailreciever, msg=logger.default_logger.msgall)
                 logger.default_logger.clear()
         finally:
             logger.default_logger.log('Done.')
+            logger.default_logger.clear()
