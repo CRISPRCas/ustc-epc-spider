@@ -10,9 +10,9 @@
 ## 功能&特点
 1. 全自动抢课。自动识别验证码，被踢下线后（或者由于其他原因，cookies失效）也能自动登录。
 2. 在可预约学时足够时，自动抢指定时间区间内、指定类型的课程。
-
 3. 在可预约学时不足时，当有更早时间的课程有余位时，自动改签。
 4. 如果改签失败（通常是因为人数已满），程序会立即尝试回滚，重新选上刚刚退掉的课。
+5. 多用户设置分离，独立检查并选/退课。
 
 ## 使用说明
 
@@ -92,7 +92,8 @@ config.json内有四个bool字段："enable.situation_dialog", "enable.topical_d
 1. 首先，git clone
 2. 复制`./config.json.example`到`./config.json`。
 3. 在`./config.json`内填入相关信息。
-4. 运行`python epc_main.py
+4. 运行`python epc_main.py`。
+5. 定时检查请搭配crontab。
 
 
 ## Credits
