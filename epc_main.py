@@ -144,7 +144,7 @@ def check_study_hours(s, selected_courses, planned_courses, replace_forbidden, r
                     candidate = c
     planned_hours = all_hours - studied_hours - disobey_hours  # not greater than 4
     left_hours = 20 - studied_hours
-    available_hours = 4 - planned_hours
+    available_hours = 6 - planned_hours
     available_hours = min(available_hours, left_hours)
     hours_enough = available_hours >= 2
     need_candidate = not hours_enough and replace_flag
@@ -471,8 +471,8 @@ if __name__ == '__main__':
             res = main(usr, usrjs)
         except Exception as e:
             logger.default_logger.log(str(e))
-            SendEmail(sender=mailsender, pswd=mailpswd, server=mailserver,
-                      receiver=administrator, msg=logger.default_logger.msgall)
+            # SendEmail(sender=mailsender, pswd=mailpswd, server=mailserver,
+            #           receiver=administrator, msg=logger.default_logger.msgall)
         else:
             if res == 1:
                 SendEmail(sender=mailsender, pswd=mailpswd, server=mailserver,
