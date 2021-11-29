@@ -50,14 +50,25 @@ config.json内有四个bool字段："enable.situation_dialog", "enable.topical_d
 
 
 
-**config.json所有字段的解释**
+**config.json主要字段的解释**
 
+| 字段                    | 说明                                                         |
+| ----------------------- | ------------------------------------------------------------ |
+| sender.user                   | 必填 字符串 发送通知的邮箱                                         |
+| sender.passwd                 | 必填 字符串 发送通知邮件邮箱的密码。邮箱需要启用SMTP服务，有的填写的是授权码而非密码|
+| sender.mailserver             | 必填 字符串 发送通知邮件邮箱的服务器，如qq邮箱的就是 smtp.qq.com          |
+| administrator.mailreceiver    | 必填 字符串 管理员接收邮件的邮箱                                       |
+| users                   | 必填 字符串 多用户时需检查的用户名，和下面的用户名一致。如有用户但是没有用户名则用户不会被检查，可用于保留用户设置           |
+| USER(用户名)                   | 必填 字典 此用户的设置，具体子字段见下表|
+
+**config.json用户设置字段解释**
 | 字段                    | 说明                                                         |
 | ----------------------- | ------------------------------------------------------------ |
 | stuno                   | 必填 字符串 你的学号                                         |
 | passwd                  | 必填 字符串 你的密码 必须是研究生信息平台自己的，不是统一认证的密码。 |
+| receiver.user                  | 必填 字符串 你接收通知的邮箱 |
 | verbose                 | 必填 bool 是否实时在stdout输出余课的周数                     |
-| enable.loop             | 必填 bool 是否在抢课操作后继续跑 （若设为True，则建议每天晚上看一下 以免选到了第二天上不了的课）     |
+| enable.loop             | 废弃，循环次数由max.loop指定    |
 | enable.order            | 必填 bool 是否启用选课 设为false的话，只会输出余课周数，而不会抢课 |
 | enable.replace          | 必填 bool 是否启用换课 当可用预约学时不足，且此项启用时，程序会考虑退掉已选的课，并换成更早的课 |
 | enable.duplicate        | 必填 bool 是否允许重复 如果你不想选已经上过的课，可将此项设为false |
@@ -70,16 +81,17 @@ config.json内有四个bool字段："enable.situation_dialog", "enable.topical_d
 | replace.earlier         | 必填 bool 仅在enable.replace启用时有效 是否需要换成比被替换课程的时间更早的课程 |
 | replace.candidate       | 可空 string 被替换的课程名称 若空，则为已预约的最晚的一门课  |
 | replace.forbidden       | 可空 string 禁止被替换的课程名称                             |
-| course.forbidden        | 可空 string 禁选的课程名称                                   |
+| course.forbidden        | 可空 string 课程中的禁选词，可多个                                   |
 | course.favorite         | 可空 string 限选的课程名称 若非空，则只有该项指定的课程才会被考虑选 |
+| max.loop         | 必填 int 最大循环检查数 |
 
 ## 安装与运行
 
 本脚本依赖python 3的`requests`包和`Pillow`包。
 
 1. 首先，git clone
-2. 复制`config.json.example`到`config.json`。
-3. 在`config.json`内填入相关信息。
+2. 复制`./config.json.example`到`./config.json`。
+3. 在`./config.json`内填入相关信息。
 4. 运行`python epc_main.py
 
 

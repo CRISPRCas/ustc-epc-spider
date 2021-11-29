@@ -25,7 +25,10 @@
         "replace.earlier": true,
         "replace.candidate": "City Growth",
         "replace.forbidden": "",
-        "course.forbidden": "",
+        "course.forbidden": [
+            "forbidden word1",
+            "forbidden word2
+        ],
         "course.favorite": "",
         "max.loop": 3
     },
@@ -47,7 +50,10 @@
         "replace.earlier": true,
         "replace.candidate": "City Growth",
         "replace.forbidden": "",
-        "course.forbidden": "",
+        "course.forbidden": [
+            "forbidden word1",
+            "forbidden word2
+        ],
         "course.favorite": "",
         "max.loop": 3
     }
